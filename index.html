@@ -11,113 +11,87 @@
 <body>
   <a class="skip" href="#product-list">Lewati ke daftar produk</a>
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">◧</span>
-      <div>
-        <strong>DapurKu 3D</strong>
-        <small>Showroom dapur interaktif · data demonstrasi</small>
+    <div class="header-row primary-row">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5V3Zm2 2v14h4V5H7Zm6 0v14h4V5h-4ZM8.5 12h.01M15.5 12h.01" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+        </span>
+        <div><strong>DapurKu 3D</strong><small>Showroom interaktif · demo</small></div>
+      </div>
+      <button type="button" id="btn-quote" class="icon-button quote-button" title="Buka daftar penawaran" aria-label="Buka penawaran">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Zm8 1v5h5M9 13h7m-7 4h7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Penawaran</span><b id="quote-count">0</b>
+      </button>
+    </div>
+    <div class="header-row controls-row">
+      <button type="button" id="btn-reset-cam" class="toolbar-button" title="Lihat seluruh dapur">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4m12 0h-4m4 4v10H4V9m0 6v4h4m12-4v4h-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kamera</span>
+      </button>
+      <button type="button" id="btn-explore" class="toolbar-button" title="Berjalan di dalam dapur">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4.5" r="1.8"/><path d="M12 8c-2 0-3.5 1-4.5 2.5L6 13l2.5.8L10 11v3l-2.5 3L6 20l1.6.8L10 18l1.5 3h1.8L12 17.5l2-1.5 3 2 1.5-.8-3.5-2.5.5-3.5 2 1 1-1.5c-2-1-4-2.2-7-2.2Z"/></svg><span>Explore</span>
+      </button>
+      <button type="button" id="btn-settings" class="toolbar-button" title="Buka pengaturan">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m5 0h2M4 12h3m5 0h8M4 17h11m5 0h0" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="15" cy="7" r="2" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="9" cy="12" r="2" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="17" cy="17" r="2" stroke="currentColor" stroke-width="1.8" fill="none"/></svg><span>Pengaturan</span>
+      </button>
+      <div class="desktop-only-actions">
+        <button type="button" id="btn-quality" class="toolbar-button" title="Kualitas render">Kualitas</button>
+        <button type="button" id="btn-reset-all" class="toolbar-button" title="Kembalikan seluruh konfigurasi">Reset</button>
       </div>
     </div>
-    <nav class="cat-bar" id="cat-bar" aria-label="Kategori peralatan"></nav>
-    <div class="top-actions">
-      <button type="button" id="btn-reset-cam" title="Kembalikan kamera ke overview">⟲ Kamera</button>
-      <button type="button" id="btn-explore" title="Berjalan di dalam dapur (WASD / sentuh)">🚶 Explore</button>
-      <button type="button" id="btn-quality" title="Kualitas render rendah / sedang / tinggi">Kualitas</button>
-      <button type="button" id="btn-reset-all" title="Kembalikan seluruh konfigurasi">Reset</button>
-      <button type="button" id="btn-quote" class="accent" title="Buka daftar penawaran">🧾 Penawaran (<span id="quote-count">0</span>)</button>
-    </div>
   </header>
+
+  <nav class="category-wrap" aria-label="Kategori peralatan"><div class="cat-bar" id="cat-bar"></div></nav>
 
   <main class="layout">
     <section class="stage" aria-label="Viewport 3D">
       <div id="viewport">
         <div id="canvas-wrap"></div>
-        <div id="hotspots" aria-hidden="false"></div>
+        <div id="hotspots" aria-label="Hotspot peralatan"></div>
         <div id="preset-bar" aria-label="Preset kamera"></div>
-        <div id="explore-help" style="display:none">
-          <strong>Mode Explore</strong> — WASD / panah untuk jalan · Shift lari · drag untuk menoleh · joystick di mobile
-        </div>
-        <div id="joystick" style="display:none" aria-label="Joystick jalan">
-          <div id="joy-nub"></div>
-        </div>
+        <button type="button" id="btn-overview" class="overview-button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4m12-4v4h-4"/></svg><span>Lihat seluruh dapur</span>
+        </button>
+        <div id="explore-help" style="display:none"><strong>Mode Explore</strong> — WASD/panah untuk jalan · drag untuk menoleh</div>
+        <div id="joystick" style="display:none" aria-label="Joystick jalan"><div id="joy-nub"></div></div>
         <div id="toast" role="status" aria-live="polite"></div>
-        <div id="gl-fallback" class="gl-fallback" style="display:none">
-          <p><strong>Mode katalog:</strong> perangkat ini tidak mendukung WebGL, tetapi katalog &amp; penawaran tetap berfungsi penuh.</p>
-        </div>
+        <div id="gl-fallback" class="gl-fallback" style="display:none"><p><strong>Mode katalog:</strong> render 3D tidak tersedia, tetapi katalog dan penawaran tetap dapat digunakan.</p></div>
+      </div>
+      <div class="mobile-stage-actions" aria-label="Kontrol showroom">
+        <button type="button" class="stage-action" data-sheet="products"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 11h16M4 16h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="18" cy="16" r="2.2"/></svg>Produk</button>
+        <button type="button" class="stage-action" data-sheet="design"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 6.2 6 11a6 6 0 0 1-12 0c0-4.8 6-11 6-11Z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><circle cx="12" cy="14" r="2"/></svg>Desain</button>
       </div>
 
       <aside class="dock" aria-label="Katalog dan desain">
-        <section class="card">
-          <h2>Daftar Produk</h2>
-          <p class="muted">Dapat dipilih dengan keyboard sebagai alternatif klik 3D.</p>
-          <ul id="product-list" class="product-list"></ul>
-        </section>
-        <section class="card">
-          <h2>Desain Dapur</h2>
-          <h3>Warna kabinet — <span id="cabinet-name"></span></h3>
-          <div id="cabinet-swatches" class="swatches" role="group" aria-label="Warna kabinet"></div>
-          <h3>Material countertop</h3>
-          <div id="counter-swatches" class="ct-list" role="group" aria-label="Material countertop"></div>
-          <h3>Kontrol</h3>
-          <p class="muted">Orbit: drag · Zoom: scroll/cubit · Geser: klik kanan / Shift+drag · Klik objek untuk detail.</p>
-        </section>
+        <section class="card products-card"><h2>Daftar Produk</h2><p class="muted">Dapat dipilih dengan keyboard sebagai alternatif klik 3D.</p><ul id="product-list" class="product-list"></ul></section>
+        <section class="card design-card"><h2>Desain Dapur</h2><div id="design-controls"><h3>Warna kabinet — <span class="design-cabinet-name"></span></h3><div class="design-cabinet-swatches swatches" role="group" aria-label="Warna kabinet"></div><h3>Material countertop</h3><div class="design-counter-swatches ct-list" role="group" aria-label="Material countertop"></div></div><h3>Kontrol</h3><p class="muted">Orbit: drag · Zoom: scroll/cubit · Geser: klik kanan / Shift+drag · Klik objek untuk detail.</p></section>
       </aside>
     </section>
 
     <aside id="spec-panel" class="spec" aria-label="Spesifikasi produk">
-      <div id="spec-empty" class="spec-empty">
-        <p><strong>Belum ada produk dipilih.</strong></p>
-        <p class="muted">Klik hotspot / peralatan di dapur, atau pilih dari Daftar Produk.</p>
-      </div>
+      <div id="spec-empty" class="spec-empty"><p><strong>Belum ada produk dipilih.</strong></p><p class="muted">Klik hotspot/peralatan, atau pilih dari Daftar Produk.</p></div>
       <div id="spec-body" style="display:none">
-        <span id="spec-cat" class="pill"></span>
-        <h2 id="spec-name"></h2>
-        <div class="thumb" id="spec-thumb" aria-hidden="true"></div>
-        <div class="price" id="spec-price"></div>
-        <p class="muted small">Harga demonstrasi (fiktif) · termasuk PPN demo</p>
-        <dl id="spec-rows" class="spec-rows"></dl>
-        <h3>Varian</h3>
-        <div id="variant-list" class="variants"></div>
-        <p id="fit-msg" class="fit-msg" role="status"></p>
-        <p id="spec-desc" class="desc"></p>
-        <div class="spec-actions">
-          <button type="button" id="btn-toggle">Buka</button>
-          <button type="button" id="btn-interior">Lihat bagian dalam</button>
-          <button type="button" id="btn-add-quote" class="accent">Tambahkan ke penawaran</button>
-        </div>
+        <span id="spec-cat" class="pill"></span><h2 id="spec-name"></h2><div class="thumb" id="spec-thumb" aria-hidden="true"></div><div class="price" id="spec-price"></div>
+        <p class="muted small">Harga demonstrasi (fiktif) · termasuk PPN demo</p><dl id="spec-rows" class="spec-rows"></dl><h3>Varian</h3><div id="variant-list" class="variants"></div><p id="fit-msg" class="fit-msg" role="status"></p><p id="spec-desc" class="desc"></p>
+        <div class="spec-actions"><button type="button" id="btn-toggle">Buka</button><button type="button" id="btn-interior">Lihat bagian dalam</button><button type="button" id="btn-add-quote" class="accent">Tambahkan ke penawaran</button></div>
       </div>
     </aside>
   </main>
 
-  <div id="sheet-scrim" class="scrim"></div>
-
-  <div id="quote-scrim" class="scrim"></div>
-  <section id="quote-drawer" class="drawer" aria-hidden="true" aria-label="Daftar penawaran">
-    <header>
-      <h2>Daftar Penawaran</h2>
-      <button type="button" id="btn-quote-close" aria-label="Tutup penawaran">✕</button>
-    </header>
-    <div id="quote-items" class="quote-items"></div>
-    <footer>
-      <div class="total"><span>Total</span><strong id="quote-total">Rp 0</strong></div>
-      <div class="drawer-actions">
-        <button type="button" id="btn-export">Ekspor JSON</button>
-        <button type="button" id="btn-print">Cetak</button>
-      </div>
-      <p class="muted small" id="demo-note"></p>
-    </footer>
+  <div id="modal-scrim" class="scrim" aria-hidden="true"></div>
+  <section id="mobile-sheet" class="mobile-sheet" aria-hidden="true" aria-labelledby="sheet-title" tabindex="-1">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <header class="sheet-header"><h2 id="sheet-title">Produk</h2><button type="button" id="btn-sheet-close" class="close-button" aria-label="Tutup panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <div id="mobile-sheet-content" class="sheet-content"></div>
   </section>
 
-  <footer class="print-only">
-    <h1>DapurKu 3D — Ringkasan Penawaran</h1>
-    <div id="print-body"></div>
-    <p id="demo-note-print"></p>
-  </footer>
+  <section id="quote-drawer" class="drawer" aria-hidden="true" aria-label="Daftar penawaran">
+    <header><h2>Daftar Penawaran</h2><button type="button" id="btn-quote-close" class="close-button" aria-label="Tutup penawaran"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <div id="quote-items" class="quote-items"></div>
+    <footer><div class="total"><span>Total</span><strong id="quote-total">Rp 0</strong></div><div class="drawer-actions"><button type="button" id="btn-export">Ekspor JSON</button><button type="button" id="btn-print">Cetak</button></div><p class="muted small" id="demo-note"></p></footer>
+  </section>
 
-  <footer class="colophon">
-    <small>DapurKu 3D · merek &amp; angka fiktif untuk demo · © <span id="year"></span></small>
-  </footer>
-
+  <footer class="print-only"><h1>DapurKu 3D — Ringkasan Penawaran</h1><div id="print-body"></div><p id="demo-note-print"></p></footer>
+  <footer class="colophon"><small>DapurKu 3D · merek &amp; angka fiktif untuk demo · © <span id="year"></span></small></footer>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

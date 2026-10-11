@@ -46,12 +46,18 @@ const toast = $('toast');
 let scene, camera, rig, lights, animator, picker, hotspots, highlighter;
 let M;
 let kitchen;
+let kitchenBox = null;
 let productNodes = new Map(); // productId -> { group, movers, disposables, focus, slot, anchor }
 let pickables = [];
 let selectedId = null;
 let exploreMode = false;
-let quality = state.quality || 'high';
+let quality = state.quality || (isMobile() ? 'medium' : 'high');
 const clock = new THREE.Clock();
+
+const MOBILE_Q = '(max-width: 767px)';
+function isMobile() {
+  return typeof window !== 'undefined' && window.matchMedia && window.matchMedia(MOBILE_Q).matches;
+}
 
 function showToast(msg, ms = 3200) {
   toast.textContent = msg;
@@ -64,7 +70,7 @@ function showToast(msg, ms = 3200) {
 // Inisialisasi 3D
 // ---------------------------------------------------------------------------
 function initGL() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(mobilePixelCap(Math.min(window.devicePixelRatio || 1, 2)));
   renderer.shadowMap.enabled = quality !== 'low';
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -84,6 +90,7 @@ function initGL() {
 
   kitchen = createKitchen(M);
   scene.add(kitchen.group);
+  kitchenBox = new THREE.Box3().setFromObject(kitchen.group);
 
   animator = createAnimator();
   for (const m of kitchen.cabinetMovers) animator.register(m);
@@ -105,8 +112,17 @@ function initGL() {
   applyLightQuality(lights, renderer, quality);
   applyQualityPixelRatio();
 
+  observeViewportResize();
   window.addEventListener('resize', resize);
   resize();
+  // Kamera awal: di mobile bingkai seluruh dapur dari bounding box.
+  if (isMobile() && kitchenBox) {
+    rig.frameBounds(kitchenBox, { dur: 0.01 });
+  }
+}
+
+function mobilePixelCap(dpr) {
+  return isMobile() ? Math.min(dpr, 1.5) : dpr;
 }
 
 function disposeProduct(id) {
@@ -193,7 +209,8 @@ function buildAllProducts() {
 function applyQualityPixelRatio() {
   if (!renderer) return;
   const dpr = window.devicePixelRatio || 1;
-  renderer.setPixelRatio(quality === 'low' ? Math.min(dpr, 1) : quality === 'medium' ? Math.min(dpr, 1.5) : Math.min(dpr, 2));
+  const cap = isMobile() ? 1.5 : 2;
+  renderer.setPixelRatio(quality === 'low' ? Math.min(dpr, 1) : quality === 'medium' ? Math.min(dpr, 1.5) : Math.min(dpr, cap));
 }
 
 // ---------------------------------------------------------------------------
@@ -219,33 +236,156 @@ function selectProduct(id, fly) {
   $('btn-interior').disabled = !id;
 }
 
-function isMobile() {
-  return window.matchMedia('(max-width: 900px)').matches;
-}
-
 function openSheet() {
-  if (!isMobile()) return;
-  panel.classList.add('open');
-  $('sheet-scrim').classList.add('on');
-  if (!panel.querySelector('.spec-close')) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'spec-close';
-    b.textContent = 'Tutup ✕';
-    b.style.cssText = 'float:right;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;';
-    b.addEventListener('click', closeSheet);
-    panel.prepend(b);
-  }
+  // Di mobile, seleksi produk membuka sheet Detail; di desktop panel samping statis.
+  if (!isMobile() || !selectedId) return;
+  openMobileSheet('detail');
 }
 
 function closeSheet() {
-  panel.classList.remove('open');
-  $('sheet-scrim').classList.remove('on');
+  closeMobileSheet();
 }
 
 function variantOf(productId) {
   const p = getProduct(productId);
   return getVariant(p, state.variants[productId]);
+}
+
+// ---------------------------------------------------------------------------
+// Bottom sheet mobile: satu state aktif (products | design | detail | settings)
+// ---------------------------------------------------------------------------
+let activeSheet = null; // null bila tertutup
+let sheetTrigger = null;
+
+function sheetEls() {
+  return { sheet: $('mobile-sheet'), scrim: $('modal-scrim'), content: $('mobile-sheet-content'), title: $('sheet-title') };
+}
+
+const SHEET_TITLES = { products: 'Produk', design: 'Desain Dapur', detail: 'Detail Produk', settings: 'Pengaturan' };
+
+function openMobileSheet(name, trigger = null) {
+  if (!isMobile()) return;
+  const { sheet, scrim, content, title } = sheetEls();
+  if (activeSheet === name && sheet.classList.contains('open')) return;
+  restoreSpecNodes();
+  activeSheet = name;
+  sheetTrigger = trigger || document.activeElement;
+  title.textContent = SHEET_TITLES[name] || name;
+  renderSheetContent(name);
+  sheet.classList.remove('closing');
+  sheet.classList.add('open');
+  sheet.setAttribute('aria-hidden', 'false');
+  scrim.classList.add('on');
+  scrim.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'sheet-open');
+  document.querySelectorAll('.mobile-stage-actions .stage-action').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sheet === name);
+  });
+  // Fokus ke sheet agar keyboard trap sederhana + screen reader sadar.
+  window.requestAnimationFrame(() => sheet.focus({ preventScroll: true }));
+}
+
+function closeMobileSheet(returnFocus = true) {
+  const { sheet, scrim } = sheetEls();
+  if (!activeSheet && !sheet.classList.contains('open')) return;
+  restoreSpecNodes();
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  activeSheet = null;
+  document.querySelectorAll('.mobile-stage-actions .stage-action').forEach((b) => b.classList.remove('active'));
+  const done = () => {
+    sheet.classList.remove('open', 'closing');
+    sheet.setAttribute('aria-hidden', 'true');
+    if (!$('quote-drawer').classList.contains('open')) {
+      scrim.classList.remove('on');
+      scrim.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('modal-open');
+    }
+    document.body.classList.remove('sheet-open');
+    if (returnFocus && sheetTrigger && document.contains(sheetTrigger)) sheetTrigger.focus({ preventScroll: true });
+    sheetTrigger = null;
+  };
+  if (reduce) { done(); return; }
+  sheet.classList.add('closing');
+  window.setTimeout(done, 300);
+}
+
+function renderSheetContent(name) {
+  const { content } = sheetEls();
+  content.innerHTML = '';
+  if (name === 'products') {
+    const h = document.createElement('p');
+    h.className = 'muted';
+    h.textContent = 'Pilih peralatan untuk melihat detail. Pilihan aktif tetap tersimpan walau filter kategori berubah.';
+    const ul = document.createElement('ul');
+    ul.className = 'product-list';
+    content.append(h, ul);
+    renderProductList(currentFilter, ul);
+  } else if (name === 'design') {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = designControlsHTML();
+    content.appendChild(wrap);
+    renderDesignControls();
+  } else if (name === 'detail') {
+    const clone = document.createElement('div');
+    clone.className = 'sheet-spec';
+    // Pindahkan isi spec-body (satu sumber kebenaran) ke sheet selama terbuka.
+    clone.append(...$('spec-body').childNodes);
+    content.appendChild(clone);
+    content.dataset.holdsSpec = '1';
+  } else if (name === 'settings') {
+    content.appendChild(buildSettingsPanel());
+  }
+}
+
+/** Kembalikan node spec-body ke panel desktop saat sheet detail ditutup. */
+function restoreSpecNodes() {
+  const { content } = sheetEls();
+  if (content.dataset.holdsSpec) {
+    const holder = content.querySelector('.sheet-spec');
+    if (holder) $('spec-body').append(...holder.childNodes);
+    delete content.dataset.holdsSpec;
+  }
+}
+
+function buildSettingsPanel() {
+  const wrap = document.createElement('div');
+  wrap.className = 'settings-panel';
+  const mkBtn = (id, label, value) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = id;
+    b.className = 'variant';
+    b.innerHTML = `<strong>${label}</strong><br><small>${value}</small>`;
+    return b;
+  };
+  const q = mkBtn('m-quality', 'Kualitas render', qualityLabel());
+  q.addEventListener('click', () => {
+    quality = quality === 'high' ? 'medium' : quality === 'medium' ? 'low' : 'high';
+    state.quality = quality;
+    saveState(state);
+    syncQualityButtons();
+    if (glOK) { applyLightQuality(lights, renderer, quality); applyQualityPixelRatio(); }
+    showToast(`Kualitas render: ${qualityLabel()}.`);
+    renderSheetContent('settings');
+  });
+  const r1 = document.createElement('button');
+  r1.type = 'button';
+  r1.className = 'variant';
+  r1.textContent = 'Lihat seluruh dapur';
+  r1.addEventListener('click', () => { closeMobileSheet(); resetCameraView(); });
+  const r2 = document.createElement('button');
+  r2.type = 'button';
+  r2.className = 'variant';
+  r2.textContent = 'Reset seluruh konfigurasi';
+  r2.addEventListener('click', () => { resetAllConfig(); renderSheetContent('settings'); });
+  const grid = document.createElement('div');
+  grid.className = 'variants';
+  grid.append(q, r1, r2);
+  const note = document.createElement('p');
+  note.className = 'muted small';
+  note.textContent = 'Kualitas rendah mematikan bayangan agar mulus di HP kentang. Reset mengembalikan warna, varian, pintu, dan penawaran.';
+  wrap.append(grid, note);
+  return wrap;
 }
 
 function renderSpec() {
@@ -339,16 +479,21 @@ function productFocusMap() {
 
 function bindToolbar() {
   const catBar = $('cat-bar');
+  const catButtons = [];
   for (const c of CATEGORIES) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip' + (c.id === 'all' ? ' active' : '');
     b.textContent = c.label;
+    b.dataset.cat = c.id;
     b.addEventListener('click', () => {
       currentFilter = c.id;
       catBar.querySelectorAll('.chip').forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
+      // Gulir chip aktif ke posisi terlihat (termasuk kategori terakhir).
+      b.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
       renderProductList(c.id);
+      if (activeSheet === 'products') renderSheetContent('products');
       // Fokus produk pertama kategori tsb bila spesifik.
       if (c.id !== 'all' && glOK) {
         const first = PRODUCTS.find((p) => p.category === c.id);
@@ -358,6 +503,7 @@ function bindToolbar() {
         }
       } else if (glOK) rig.goPreset('overview');
     });
+    catButtons.push(b);
     catBar.appendChild(b);
   }
 
@@ -388,9 +534,15 @@ function bindToolbar() {
   $('btn-reset-cam').addEventListener('click', () => {
     if (!glOK) return;
     if (exploreMode) setExplore(false);
-    rig.goPreset('overview');
+    resetCameraView();
+  });
+  $('btn-overview').addEventListener('click', () => {
+    if (!glOK) return;
+    if (exploreMode) setExplore(false);
+    resetCameraView();
   });
   $('btn-explore').addEventListener('click', () => setExplore(!exploreMode));
+  $('btn-settings').addEventListener('click', (e) => openMobileSheet('settings', e.currentTarget));
   $('btn-quality').addEventListener('click', () => {
     quality = quality === 'high' ? 'medium' : quality === 'medium' ? 'low' : 'high';
     state.quality = quality;
@@ -400,25 +552,50 @@ function bindToolbar() {
     showToast(`Kualitas render: ${qualityLabel()}.`);
   });
   $('btn-quality').textContent = `Kualitas: ${qualityLabel()}`;
-  $('btn-reset-all').addEventListener('click', () => {
-    const s = resetState();
-    Object.assign(state, s);
-    if (M) {
-      applyCabinetColor(M, state.cabinet);
-      applyCountertop(M, state.countertop);
-    }
-    renderDesignControls();
-    if (glOK) {
-      buildAllProducts();
-      animator.setAll(false);
-      rig.goPreset('overview');
-    }
-    state.openDoors = {};
-    saveNow(state);
-    selectProduct(null, false);
-    renderQuote();
-    showToast('Konfigurasi dikembalikan ke awal.');
+  $('btn-reset-all').addEventListener('click', () => resetAllConfig());
+
+  // Tombol Produk/Desain di bawah viewport (mobile) membuka sheet.
+  document.querySelectorAll('.mobile-stage-actions .stage-action').forEach((b) => {
+    b.addEventListener('click', () => {
+      const name = b.dataset.sheet;
+      if (activeSheet === name) closeMobileSheet();
+      else openMobileSheet(name, b);
+    });
   });
+}
+
+function resetCameraView() {
+  if (!glOK || !rig) return;
+  if (isMobile() && kitchenBox) rig.frameBounds(kitchenBox, { keepDirection: false });
+  else rig.goPreset('overview');
+}
+
+function syncQualityButtons() {
+  const label = `Kualitas: ${qualityLabel()}`;
+  const b = $('btn-quality');
+  if (b) b.textContent = label;
+}
+
+function resetAllConfig() {
+  const s = resetState();
+  Object.assign(state, s);
+  quality = state.quality || (isMobile() ? 'medium' : 'high');
+  syncQualityButtons();
+  if (M) {
+    applyCabinetColor(M, state.cabinet);
+    applyCountertop(M, state.countertop);
+  }
+  renderDesignControls();
+  if (glOK) {
+    buildAllProducts();
+    animator.setAll(false);
+    resetCameraView();
+  }
+  state.openDoors = {};
+  saveNow(state);
+  selectProduct(null, false);
+  renderQuote();
+  showToast('Konfigurasi dikembalikan ke awal.');
 }
 
 function qualityLabel() {
@@ -446,50 +623,89 @@ function setExplore(on) {
 // Kontrol desain (warna kabinet & countertop)
 // ---------------------------------------------------------------------------
 function renderDesignControls() {
-  const cab = $('cabinet-swatches');
-  cab.innerHTML = '';
-  for (const c of CABINET_COLORS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'swatch' + (state.cabinet === c.id ? ' active' : '');
-    b.style.background = c.color;
-    b.title = c.label;
-    b.setAttribute('aria-label', `Warna kabinet ${c.label}`);
-    b.addEventListener('click', () => {
-      state.cabinet = c.id;
-      saveState(state);
-      if (M) applyCabinetColor(M, c.id);
-      renderDesignControls();
+  // Render ke semua set kontrol yang ada (panel desktop + sheet mobile bila terbuka).
+  const sets = [];
+  const docCab = document.querySelector('.dock .design-cabinet-swatches');
+  if (docCab) {
+    sets.push({
+      cab: docCab,
+      ct: document.querySelector('.dock .design-counter-swatches'),
+      nm: document.querySelector('.dock .design-cabinet-name'),
     });
-    cab.appendChild(b);
   }
-  $('cabinet-name').textContent = (CABINET_COLORS.find((c) => c.id === state.cabinet) || {}).label || '';
+  const sheetCab = document.querySelector('#mobile-sheet-content .design-cabinet-swatches');
+  if (sheetCab) {
+    sets.push({
+      cab: sheetCab,
+      ct: document.querySelector('#mobile-sheet-content .design-counter-swatches'),
+      nm: document.querySelector('#mobile-sheet-content .design-cabinet-name'),
+    });
+  }
+  for (const { cab, ct, nm } of sets) {
+    if (!cab || !ct) continue;
+    cab.innerHTML = '';
+    for (const c of CABINET_COLORS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch' + (state.cabinet === c.id ? ' active' : '');
+      b.style.background = c.color;
+      b.title = c.label;
+      b.setAttribute('aria-label', `Warna kabinet ${c.label}`);
+      b.addEventListener('click', () => {
+        state.cabinet = c.id;
+        saveState(state);
+        if (M) applyCabinetColor(M, c.id);
+        renderDesignControls();
+      });
+      cab.appendChild(b);
+    }
+    if (nm) nm.textContent = (CABINET_COLORS.find((c) => c.id === state.cabinet) || {}).label || '';
+    ct.innerHTML = '';
+    for (const c of COUNTERTOPS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cts' + (state.countertop === c.id ? ' active' : '');
+      b.textContent = c.label;
+      b.addEventListener('click', () => {
+        state.countertop = c.id;
+        saveState(state);
+        if (M) applyCountertop(M, c.id);
+        renderDesignControls();
+      });
+      ct.appendChild(b);
+    }
+  }
+}
 
-  const ct = $('counter-swatches');
-  ct.innerHTML = '';
-  for (const c of COUNTERTOPS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'cts' + (state.countertop === c.id ? ' active' : '');
-    b.textContent = c.label;
-    b.addEventListener('click', () => {
-      state.countertop = c.id;
-      saveState(state);
-      if (M) applyCountertop(M, c.id);
-      renderDesignControls();
-    });
-    ct.appendChild(b);
-  }
+// Struktur kontrol desain dipakai ulang di panel desktop & sheet mobile.
+function designControlsHTML() {
+  return `<h3>Warna kabinet — <span class="design-cabinet-name"></span></h3>
+    <div class="design-cabinet-swatches swatches" role="group" aria-label="Warna kabinet"></div>
+    <h3>Material countertop</h3>
+    <div class="design-counter-swatches ct-list" role="group" aria-label="Material countertop"></div>`;
 }
 
 // ---------------------------------------------------------------------------
 // Daftar produk (alternatif keyboard) + penawaran
 // ---------------------------------------------------------------------------
-function renderProductList(filter = 'all') {
-  const list = $('product-list');
+function renderProductList(filter = 'all', target) {
+  const list = target || $('product-list');
+  if (!list) return;
   list.innerHTML = '';
-  for (const p of PRODUCTS) {
-    if (filter !== 'all' && p.category !== filter) continue;
+  const visible = PRODUCTS.filter((p) => filter === 'all' || p.category === filter);
+  // Filter tidak boleh menghilangkan pilihan aktif tanpa penjelasan:
+  // bila produk terpilih tersaring, tampilkan penanda di atas daftar.
+  if (selectedId && !visible.some((p) => p.id === selectedId)) {
+    const p = getProduct(selectedId);
+    const note = document.createElement('li');
+    note.className = 'filter-note';
+    note.innerHTML = `<button type="button" class="prod active"><span class="prod-thumb" aria-hidden="true">${thumbFor(p.id)}</span>` +
+      `<span class="prod-text"><strong>${BRAND} ${p.name} (dipilih)</strong>` +
+      `<small>Tersaring oleh kategori — ketuk untuk melihat, atau pilih “Semua”.</small></span></button>`;
+    note.querySelector('button').addEventListener('click', () => selectProduct(p.id, true));
+    list.appendChild(note);
+  }
+  for (const p of visible) {
     const v = variantOf(p.id);
     const li = document.createElement('li');
     const b = document.createElement('button');
@@ -593,13 +809,21 @@ function removeLine(productId, variantId) {
 }
 
 function bindQuote() {
-  $('btn-quote').addEventListener('click', () => {
+  $('btn-quote').addEventListener('click', (e) => {
+    // Di mobile, tutup sheet lain dulu — jangan menumpuk panel.
+    if (activeSheet) {
+      restoreSpecNodes();
+      closeMobileSheet(false);
+    }
     $('quote-drawer').classList.add('open');
     $('quote-drawer').setAttribute('aria-hidden', 'false');
-    $('quote-scrim').classList.add('on');
+    $('modal-scrim').classList.add('on');
+    $('modal-scrim').setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    sheetTrigger = e.currentTarget;
+    window.requestAnimationFrame(() => $('btn-quote-close').focus({ preventScroll: true }));
   });
   $('btn-quote-close').addEventListener('click', closeQuote);
-  $('quote-scrim').addEventListener('click', closeQuote);
   $('btn-export').addEventListener('click', exportJSON);
   $('btn-print').addEventListener('click', printQuote);
   $('btn-add-quote').addEventListener('click', () => {
@@ -617,7 +841,13 @@ function bindQuote() {
 function closeQuote() {
   $('quote-drawer').classList.remove('open');
   $('quote-drawer').setAttribute('aria-hidden', 'true');
-  $('quote-scrim').classList.remove('on');
+  if (!activeSheet) {
+    $('modal-scrim').classList.remove('on');
+    $('modal-scrim').setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+  }
+  if (sheetTrigger && document.contains(sheetTrigger)) sheetTrigger.focus({ preventScroll: true });
+  sheetTrigger = null;
 }
 
 function printQuote() {
@@ -661,11 +891,25 @@ function exportJSON() {
 // Tombol panel spesifikasi
 // ---------------------------------------------------------------------------
 function bindSpecButtons() {
-  $('sheet-scrim').addEventListener('click', closeSheet);
+  $('btn-sheet-close').addEventListener('click', () => {
+    restoreSpecNodes();
+    closeMobileSheet();
+    if (!selectedId) renderSpec();
+  });
+  $('modal-scrim').addEventListener('click', () => {
+    if ($('quote-drawer').classList.contains('open')) closeQuote();
+    else if (activeSheet) {
+      restoreSpecNodes();
+      closeMobileSheet();
+    }
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      closeSheet();
-      closeQuote();
+      if ($('quote-drawer').classList.contains('open')) closeQuote();
+      else if (activeSheet) {
+        restoreSpecNodes();
+        closeMobileSheet();
+      }
       if (exploreMode) setExplore(false);
     }
   });
@@ -762,6 +1006,16 @@ function resize() {
   rig.resize(w, h);
 }
 
+// ResizeObserver: perbarui renderer + aspect kamera mengikuti container,
+// tanpa mereset posisi kamera pengguna.
+let viewportRO = null;
+function observeViewportResize() {
+  if (!glOK || typeof ResizeObserver === 'undefined') return;
+  if (viewportRO) viewportRO.disconnect();
+  viewportRO = new ResizeObserver(() => resize());
+  viewportRO.observe(canvasWrap);
+}
+
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -796,9 +1050,13 @@ function initFallback() {
   VFALLBACK.style.display = '';
   canvasWrap.innerHTML = '<div class="no-gl"><p>Render 3D tidak tersedia di peramban ini. Katalog dan penawaran tetap dapat digunakan di bawah.</p></div>';
   // Matikan kontrol 3D.
-  for (const id of ['btn-reset-cam', 'btn-explore', 'btn-quality', 'btn-toggle', 'btn-interior']) {
+  for (const id of ['btn-reset-cam', 'btn-explore', 'btn-quality', 'btn-toggle', 'btn-interior', 'btn-overview']) {
     const el = $(id);
     if (el) el.disabled = true;
+  }
+  // Tanpa WebGL, sheet Produk/Desain tetap berfungsi penuh.
+  if (isMobile()) {
+    document.querySelectorAll('.mobile-stage-actions .stage-action').forEach((b) => { b.disabled = false; });
   }
 }
 

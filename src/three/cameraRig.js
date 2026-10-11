@@ -92,6 +92,34 @@ export function createCameraRig(dom, opts = {}) {
     flyTo(pos, worldTarget);
   }
 
+  /**
+   * Bingkai seluruh dapur dari bounding box agar muat di viewport mobile.
+   * Arah pandang dipertahankan (relatif terhadap target lama) bila ada;
+   * bila tidak, pakai sudut overview yang menyenangkan di layar portrait.
+   */
+  function frameBounds(box, opts = {}) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.5;
+    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+    const fitH = radius / Math.sin(Math.min(hFov, vFov) / 2);
+    const fitV = radius / Math.sin(vFov / 2);
+    const dist = THREE.MathUtils.clamp(Math.max(fitH, fitV) * 1.02, 2.2, 12);
+    let dir;
+    if (opts.keepDirection) {
+      dir = camera.position.clone().sub(target);
+      if (dir.lengthSq() < 1e-6) dir.set(0.55, 0.5, 1);
+      dir.normalize();
+      dir.y = Math.max(dir.y, 0.32);
+      dir.normalize();
+    } else {
+      dir = new THREE.Vector3(0.62, 0.52, 1).normalize();
+    }
+    const pos = center.clone().addScaledVector(dir, dist);
+    flyTo(pos, center, opts.dur ?? 1.0);
+  }
+
   function update(dt) {
     if (state.fly) {
       const f = state.fly;
@@ -280,7 +308,7 @@ export function createCameraRig(dom, opts = {}) {
 
   return {
     camera, target, state, stick,
-    update, exploreUpdate, flyTo, goPreset, focusObject,
+    update, exploreUpdate, flyTo, goPreset, focusObject, frameBounds,
     enterExplore, exitExplore, lookDrag, resize,
     syncOrbitFromCamera,
   };

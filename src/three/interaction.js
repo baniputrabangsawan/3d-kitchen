@@ -50,6 +50,12 @@ export function createHotspots(layer, camera, scene) {
   const ray = new THREE.Raycaster();
   const v = new THREE.Vector3();
   const dir = new THREE.Vector3();
+  let activeId = null;
+
+  const isCompact = () =>
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(max-width: 767px)').matches;
 
   function add(productId, label, getPos) {
     remove(productId);
@@ -57,13 +63,14 @@ export function createHotspots(layer, camera, scene) {
     el.className = 'hotspot';
     el.type = 'button';
     el.setAttribute('aria-label', `Pilih ${label}`);
-    el.innerHTML = `<span class="hotspot-dot"></span><span class="hotspot-tag">${escapeHtml(label)}</span>`;
+    el.innerHTML = `<span class="hotspot-dot" aria-hidden="true"></span><span class="hotspot-tag" aria-hidden="true">${escapeHtml(label)}</span>`;
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       layer.dispatchEvent(new CustomEvent('hotspot', { detail: productId, bubbles: false }));
     });
     layer.appendChild(el);
     items.set(productId, { el, getPos });
+    el.classList.toggle('active', productId === activeId);
   }
 
   function remove(productId) {
@@ -80,15 +87,25 @@ export function createHotspots(layer, camera, scene) {
   function update() {
     const w = layer.clientWidth;
     const h = layer.clientHeight;
-    for (const [, it] of items) {
+    const compact = isCompact();
+    for (const [id, it] of items) {
       const p = it.getPos();
-      if (!p) { it.el.style.display = 'none'; continue; }
+      if (!p) {
+        it.el.style.display = 'none';
+        it.el.setAttribute('aria-hidden', 'true');
+        it.el.tabIndex = -1;
+        continue;
+      }
       v.copy(p).project(camera);
       const behind = v.z > 1;
       const x = (v.x * 0.5 + 0.5) * w;
       const y = (-v.y * 0.5 + 0.5) * h;
-      if (behind || x < -40 || x > w + 40 || y < -40 || y > h + 40) {
+      // Di luar layar: sembunyikan total (jangan tarik ke tepi agar tidak menyesatkan).
+      const margin = 22;
+      if (behind || x < -margin || x > w + margin || y < -margin || y > h + margin) {
         it.el.style.display = 'none';
+        it.el.setAttribute('aria-hidden', 'true');
+        it.el.tabIndex = -1;
         continue;
       }
       // Uji oklusi: raycast dari kamera ke titik; bila halangan lebih dekat, sembunyikan.
@@ -98,12 +115,31 @@ export function createHotspots(layer, camera, scene) {
       ray.far = dist - 0.12;
       const hits = ray.intersectObjects(scene.children, true);
       const blocked = hits.length > 0;
-      it.el.style.display = blocked ? 'none' : '';
+      if (blocked) {
+        it.el.style.display = 'none';
+        it.el.setAttribute('aria-hidden', 'true');
+        it.el.tabIndex = -1;
+        continue;
+      }
+      it.el.style.display = '';
+      it.el.removeAttribute('aria-hidden');
+      it.el.tabIndex = 0;
       it.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
+      // Label aktif yang dekat tepi: balik sisi + garis penghubung.
+      it.el.classList.remove('flip', 'leader');
+      if (compact && id === activeId) {
+        const tagW = 150;
+        const nearRight = x + 24 + tagW > w - 4;
+        const nearLeft = x - 24 - tagW < 4;
+        const nearEdge = nearRight || nearLeft;
+        if (nearRight && !nearLeft) it.el.classList.add('flip');
+        if (nearEdge) it.el.classList.add('leader');
+      }
     }
   }
 
   function setActive(productId) {
+    activeId = productId;
     for (const [id, it] of items) {
       it.el.classList.toggle('active', id === productId);
     }
